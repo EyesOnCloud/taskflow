@@ -1,8 +1,10 @@
 """Core task operations: create, read, update, bulk-notify.
 
-Seeds DEFECT #1 (race condition) and DEFECT #6 (PII in logs).
+Defect #1 (race condition) and Defect #6 (PII in logs) are fixed here.
+See docs/ANSWER_KEY.md for what changed and why.
 """
 import logging
+import sqlite3
 
 logger = logging.getLogger("taskflow.tasks")
 
@@ -10,22 +12,18 @@ logger = logging.getLogger("taskflow.tasks")
 def create_task(conn, title, description, assignee_email, idempotency_key=None):
     """Create a task.
 
-    DEFECT #1 (seeded, unfixed on `start`): if an idempotency_key is
-    given, we check whether a task with that key already exists, and
-    only insert if not. That check-then-act sequence is NOT atomic --
-    two concurrent requests carrying the same idempotency_key can both
-    pass the "does it exist?" check before either has committed an
-    insert, and both go on to create a row. There is no UNIQUE
-    constraint on idempotency_key backing this up at the database
-    level, so nothing stops it.
+    FIXED (Defect #1): the existence check below is kept as a fast
+    path (avoids a round trip to the database for the common case of
+    "not a retry"), but it is no longer trusted alone. The real
+    protection is the UNIQUE index on idempotency_key added by
+    migrations/0003 -- if two threads both pass the fast-path check,
+    only one INSERT can succeed; the other raises sqlite3.IntegrityError,
+    which is caught here and resolved onto the winner's row instead of
+    propagating or silently creating a duplicate.
 
-    DEFECT #6 (seeded, unfixed on `start`): the log line below
-    includes the assignee's email address and the full task
-    description. Emails are personal data and descriptions can
-    contain anything a user typed (including personal data about
-    someone else) -- neither belongs in a log stream that is often
-    retained far longer, and read by far more people, than anyone
-    submitting a task expects.
+    FIXED (Defect #6): the log line only records the task id and
+    title -- never assignee_email or description, which are personal
+    data and do not belong in a log stream.
     """
     if idempotency_key:
         existing = conn.execute(
@@ -33,24 +31,30 @@ def create_task(conn, title, description, assignee_email, idempotency_key=None):
         ).fetchone()
         if existing:
             return existing["id"]
-        # <-- the race window: another thread can run the SELECT above,
-        # also find nothing, and also reach the INSERT below before this
-        # thread's INSERT commits.
 
-    cur = conn.execute(
-        """
-        INSERT INTO tasks (title, description, assignee_email, status, idempotency_key)
-        VALUES (?, ?, ?, 'open', ?)
-        """,
-        (title, description, assignee_email, idempotency_key),
-    )
-    conn.commit()
-    task_id = cur.lastrowid
+    try:
+        cur = conn.execute(
+            """
+            INSERT INTO tasks (title, description, assignee_email, status, idempotency_key)
+            VALUES (?, ?, ?, 'open', ?)
+            """,
+            (title, description, assignee_email, idempotency_key),
+        )
+        conn.commit()
+        task_id = cur.lastrowid
+    except sqlite3.IntegrityError:
+        # Another thread won the race on this idempotency_key between
+        # our fast-path check and our INSERT. Resolve onto its row
+        # instead of raising or creating a duplicate.
+        conn.rollback()
+        winner = conn.execute(
+            "SELECT id FROM tasks WHERE idempotency_key = ?", (idempotency_key,)
+        ).fetchone()
+        if winner is None:
+            raise  # genuinely unexpected -- not the race we planned for
+        return winner["id"]
 
-    logger.info(
-        "task created id=%s title=%r assignee_email=%s description=%r",
-        task_id, title, assignee_email, description,
-    )
+    logger.info("task created id=%s title=%r", task_id, title)
     return task_id
 
 

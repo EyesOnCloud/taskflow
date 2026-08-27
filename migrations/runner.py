@@ -15,6 +15,7 @@ MIGRATIONS_DIR = os.path.dirname(__file__)
 MIGRATION_MODULES = [
     "0001_initial",
     "0002_add_priority_score",
+    "0003_add_idempotency_unique_index",
 ]
 
 

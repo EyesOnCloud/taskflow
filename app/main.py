@@ -60,23 +60,34 @@ class TaskFlowHandler(BaseHTTPRequestHandler):
         finally:
             conn.close()
 
+    # FIXED (Defect #3): a hard per-request cap on how many outbound
+    # webhook calls one bulk-notify request can trigger. If the
+    # backlog is larger than this, we notify what we safely can and
+    # tell the caller explicitly how much was left over, rather than
+    # silently firing an unbounded burst at the downstream receiver.
+    MAX_NOTIFIES_PER_REQUEST = 50
+
     def _bulk_notify(self, conn):
-        """DEFECT #3 (seeded, unfixed on `start`): this loops over every
-        'done' task and fires a synchronous webhook call for each one,
-        with no cap on how many run, no rate limiting, and no
-        backpressure signal back to the caller. A bulk operation
-        against a large 'done' backlog can hammer the downstream
-        webhook receiver far past whatever it can safely handle.
-        """
         tasks = task_service.done_tasks(conn)
+        to_send = tasks[: self.MAX_NOTIFIES_PER_REQUEST]
+        skipped = len(tasks) - len(to_send)
+
         results = []
-        for t in tasks:
+        for t in to_send:
             try:
                 status = notify.send_webhook(NOTIFY_WEBHOOK_URL, {"task_id": t["id"], "status": t["status"]})
                 results.append({"task_id": t["id"], "ok": True, "status": status})
             except Exception as exc:  # noqa: BLE001
                 results.append({"task_id": t["id"], "ok": False, "error": str(exc)})
-        self._send_json(200, {"notified": len(results), "results": results})
+
+        self._send_json(
+            200,
+            {
+                "notified": len(results),
+                "results": results,
+                "skipped_due_to_rate_limit": skipped,
+            },
+        )
 
     def do_GET(self):
         parsed = urlparse(self.path)
