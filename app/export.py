@@ -14,4 +14,4 @@ def export_tasks(tasks, webhook_url):
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req)
+        urllib.request.urlopen(req, timeout=5)
