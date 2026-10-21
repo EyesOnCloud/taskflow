@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 def export_tasks(tasks, webhook_url):
     """Send completed tasks to an external reporting service."""
     for task in tasks:
-        logger.info("Exporting task for %s", task["assignee_email"])
+        logger.info("Exporting task %s", task.get("id"))
         payload = json.dumps(task).encode()
         req = urllib.request.Request(
             webhook_url,
