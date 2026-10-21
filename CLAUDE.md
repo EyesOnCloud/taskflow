@@ -1,40 +1,25 @@
-# TaskFlow -- Repository Guidance for Claude
+# Project Guidelines
 
-TaskFlow is a small, single-service team task tracker. Stdlib-only
-Python: `http.server` for the API, `sqlite3` for storage, no ORM, no
-message broker, no Docker required.
+## Code Review Standards
+- Prioritize correctness, security, and data integrity.
+- Identify concrete defects rather than stylistic preferences.
+- Include file paths and supporting evidence for findings.
+- Do not report speculative issues without a clear explanation.
+- Avoid reporting the same issue more than once.
 
-## Build & test
+## Testing Standards
+- Inspect existing tests before suggesting new test cases.
+- Prefer tests that validate observable behavior.
+- Include relevant edge cases and error-handling scenarios.
+- Avoid duplicating scenarios already covered by existing tests.
 
-- Run the app: `python3 app/main.py`
-- Run the tests: `pytest -q`
-- No install step is required for the app itself. `pytest` is the only
-  external tool this project needs.
+## Fixture Conventions
+- Reuse existing fixtures and test helpers where appropriate.
+- Follow the repository's established test data conventions.
+- Avoid introducing unnecessary duplicate test data.
 
-## Non-negotiable rules
-
-- **Every migration in `migrations/` must have a working `downgrade()`.**
-  A migration that only implements `upgrade()` is not done. Verify by
-  actually calling `migrate_down()` in a test, not by reading the code.
-- **Never log `assignee_email` or `description` (or any field derived
-  from them) in `app/task_service.py` or anywhere else.** These are
-  personal data and do not belong in logs.
-- **Any outbound HTTP call (see `app/notify.py`) must set an explicit
-  timeout.** No exceptions.
-- **Any endpoint that can trigger more than one outbound call per
-  request (see `/tasks/bulk-notify`) must be rate-limited or capped.**
-
-## Structure
-
-- `app/main.py` -- HTTP routing and request handling
-- `app/task_service.py` -- task CRUD logic
-- `app/notify.py` -- outbound webhook client
-- `app/priority.py` -- priority scoring
-- `migrations/` -- schema migrations (custom runner, not Alembic --
-  this project has no external dependencies)
-- `tests/` -- pytest suite, runnable standalone with no other services
-
-## Scope
-
-Prefer the smallest patch that fixes the stated defect and its test.
-Do not refactor unrelated code in the same change.
+## Review Output
+- Classify findings by severity.
+- Explain the potential impact of each finding.
+- Recommend a specific corrective action.
+- Report no findings when no actionable issues are identified.
