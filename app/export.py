@@ -1,5 +1,6 @@
 import json
 import logging
+import http.client
 import urllib.error
 import urllib.request
 
@@ -29,6 +30,6 @@ def export_tasks(tasks, webhook_url):
         try:
             with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS):
                 exported += 1
-        except (urllib.error.URLError, TimeoutError) as exc:
+        except (OSError, http.client.HTTPException) as exc:
             logger.warning("Export failed for task %s: %s", task.get("id"), exc)
     return exported
